@@ -1,0 +1,13 @@
+import type {DashboardData} from '../components/DashboardCommon';
+import React from 'react';
+import {AlertTriangle,XCircle,CheckCircle2} from '../icons';
+import {Metric,Status,FailureSource,formatTime} from '../components/DashboardCommon';
+import type {Incident} from '../api';
+type Props = {data:DashboardData;incidents:Incident[];incidentStatus:string;setIncidentStatus:(v:string)=>void;expandedIncident:string|null;setExpandedIncident:(v:string|null)=>void;};
+export default function IncidentsPage({data,incidents,incidentStatus,setIncidentStatus,expandedIncident,setExpandedIncident}:Props){
+return <>
+
+      <section className="kpis kpis-three"><Metric icon={<AlertTriangle/>} label="전체 장애" value={`${data.incidents.length}건`}/><Metric icon={<XCircle/>} label="미해결" value={`${data.incidents.filter(i=>i.status==='OPEN').length}건`}/><Metric icon={<CheckCircle2/>} label="해결" value={`${data.incidents.filter(i=>i.status==='RESOLVED').length}건`}/></section>
+      <section className="panel"><div className="panelhead"><h3>장애 및 복구 이력</h3><div className="filters"><select aria-label="장애 상태" value={incidentStatus} onChange={e=>setIncidentStatus(e.target.value)}><option value="ALL">전체 상태</option><option value="OPEN">미해결</option><option value="RECOVERING">복구 중</option><option value="RESOLVED">해결</option></select></div></div><table><thead><tr><th>장애 ID</th><th>실행 ID</th><th>오류 유형</th><th>오류 발생 위치</th><th>심각도</th><th>상태</th><th>발생 시각</th><th>복구 시도</th></tr></thead><tbody>{incidents.map(i=><React.Fragment key={i.incident_id}><tr className="clickrow" onClick={()=>setExpandedIncident(expandedIncident===i.incident_id?null:i.incident_id)}><td>{i.incident_id}</td><td>{i.run_id}</td><td>{i.error_code}</td><td><FailureSource source={i.error_source}/></td><td><Status value={i.severity}/></td><td><Status value={i.status}/></td><td>{formatTime(i.occurred_at)}</td><td>{i.recoveries.length}회 · {expandedIncident===i.incident_id?'접기':'펼치기'}</td></tr>{expandedIncident===i.incident_id&&<tr><td colSpan={8} className="expanded"><h4>복구 시도 내역 · {i.incident_id}</h4>{i.recoveries.length?<table><thead><tr><th>복구 ID</th><th>시도 순서</th><th>복구 방법</th><th>결과</th></tr></thead><tbody>{i.recoveries.map((r,n)=><tr key={n}><td title={r.recovery_id}>{r.recovery_id.slice(0,8)}…</td><td>{r.attempt_number}차</td><td>{r.recovery_action}</td><td><Status value={r.status}/></td></tr>)}</tbody></table>:<p>복구 시도 기록이 없습니다.</p>}</td></tr>}</React.Fragment>)}</tbody></table>{incidents.length===0&&<p className="empty">조건에 맞는 장애 기록이 없습니다.</p>}<p className="hint">장애 행을 클릭하면 연결된 recovery_logs를 확인할 수 있습니다. 복구 실행은 이 화면에서 수행하지 않습니다.</p></section>
+</>;
+}
