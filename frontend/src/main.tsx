@@ -40,7 +40,22 @@ function App(){
     finally{setLoading(false);}
   }
   useEffect(()=>{void refresh();},[days]);
-  useEffect(()=>{if(!selected)return;getJSON<RunDetail>(`/api/v1/admin/agent-runs/${encodeURIComponent(selected)}`).then(setDetail).catch(e=>setError(String(e)));},[selected]);
+  useEffect(()=>{
+    if(!selected){setDetail(null);return;}
+    let cancelled=false;
+    let timer:number|undefined;
+    const loadDetail=async()=>{
+      try{
+        const next=await getJSON<RunDetail>(`/api/v1/admin/agent-runs/${encodeURIComponent(selected)}`);
+        if(cancelled)return;
+        setDetail(next);
+        setData(current=>current?{...current,runs:current.runs.map(run=>run.run_id===selected?{...run,...next.run}:run)}:current);
+        if(next.run.status==='RUNNING')timer=window.setTimeout(()=>void loadDetail(),2000);
+      }catch(e){if(!cancelled)setError(String(e));}
+    };
+    void loadDetail();
+    return ()=>{cancelled=true;if(timer!==undefined)window.clearTimeout(timer);};
+  },[selected]);
   const runs=data?.runs.filter(r=>(runStatus==='ALL'||r.status===runStatus)&&(`${r.run_id} ${r.route??''}`.toLowerCase().includes(runSearch.toLowerCase())))||[];
   const calls=data?.apiCalls.filter(c=>(provider==='ALL'||c.provider===provider)&&(apiStatus==='ALL'||(apiStatus==='SUCCESS')===c.success))||[];
   const incidents=data?.incidents.filter(i=>incidentStatus==='ALL'||i.status===incidentStatus)||[];

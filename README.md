@@ -2,7 +2,7 @@
 
 > **PostgreSQL 운영 로그 대시보드** · Python 3.11 / FastAPI / React 18 / TypeScript / Vite / Recharts
 >
-> FastAPI는 SEOUL-WAVE가 사용하는 PostgreSQL의 기존 운영 로그 테이블을 읽기 전용으로 조회합니다. LangGraph 및 외부 서비스 상태를 직접 점검하거나 실행하지는 않습니다.
+> FastAPI는 SEOUL-WAVE가 사용하는 PostgreSQL 운영 로그를 읽기 전용으로 조회합니다. 상태 화면은 OpenAI 모델 조회와 서울시 문화행사 API의 읽기 요청으로 외부 연결을 확인하며, 추천 실행은 만들지 않습니다.
 
 ## 1. 화면 미리보기
 
@@ -15,7 +15,7 @@
 | 메뉴 | 담당 파일 | 주요 기능 | 조회 API |
 |---|---|---|---|
 | 운영 대시보드 | `DashboardPage.tsx` | 전체 실행·성공·실패·복구 건수, 일별 추이, 성공·실패 도넛 차트, 오류 원인별 차트, API 제공자별 응답시간 차트, 서비스 상태 | `/dashboard/summary`, `/dashboard/trends`, `/health` |
-| 실행 이력 | `RunsPage.tsx` | 실행 ID/구간 검색, 상태 필터, 실행 목록, 선택한 실행의 에이전트 단계 및 Handoff | `/agent-runs`, `/agent-runs/{run_id}` |
+| 실행 이력 | `RunsPage.tsx` | 실행별 PostgreSQL·로그 스키마·LangGraph·LLM·행사 API 상태, API 호출, 단계 및 Handoff. 실행 중인 건은 2초 간격 갱신 | `/agent-runs`, `/agent-runs/{run_id}` |
 | API 모니터링 | `ApiMonitoringPage.tsx` | 제공자별 호출 통계, 성공률, 응답 시간, 호출 결과 필터, 필터 적용 로그 CSV 다운로드 | `/api-calls` |
 | 장애·복구 기록 | `IncidentsPage.tsx` | 장애 상태 필터, 심각도, 장애 상세 펼치기, 복구 시도 내역 | `/incidents` |
 
@@ -75,7 +75,7 @@ flowchart LR
   DB --> R --> C -->|JSON| V
 ```
 
-- **Repository:** 기존 `003_operations_logging.sql`이 정의한 운영 로그 테이블만 조회합니다. 대시보드가 로그를 새로 생성하거나 별도 테이블을 만들지 않습니다.
+- **Repository:** 사용자 서비스가 같은 `run_id`로 저장한 운영 로그 및 `run_component_logs`를 읽기 전용으로 조회합니다. 대시보드는 로그를 새로 생성하지 않습니다.
 - **View:** React 페이지별 TSX, 공통 컴포넌트, 아이콘/메뉴 설정.
 - **Controller:** GET API 요청과 관리자 키/CORS 처리.
 - **Database:** `DATABASE_HOST`, `DATABASE_PORT`, `DATABASE_NAME`, `DATABASE_USER`, `DATABASE_PASSWORD`로 연결하며 DB 연결은 읽기 전용입니다.
@@ -94,22 +94,22 @@ flowchart LR
 
 ```powershell
 Set-Location ..\SEOUL-WAVE
-# SEOUL-WAVE\.env에 로컬 개발용 ADMIN_API_KEY=<충분히 긴 임의의 비밀값> 한 줄을 추가합니다.
-docker compose -f compose.yaml -f ..\SEOUL-WAVE_admin\docker-compose.admin.yml up --build -d
+# SEOUL-WAVE\.env와 SEOUL-WAVE_admin\.env에서 로컬 설정을 읽습니다.
+docker compose --env-file .env --env-file ..\SEOUL-WAVE_admin\.env -f compose.yaml -f ..\SEOUL-WAVE_admin\docker-compose.admin.yml up --build -d
 ```
 
 이 방식은 SEOUL-WAVE의 `db`, `backend`, `itinerary-worker`, `frontend`와 admin의 `admin-api`, `admin-frontend`를 **한 Compose 프로젝트 및 같은 PostgreSQL 컨테이너/볼륨**에서 실행합니다. 별도의 공용 DB 주소는 설정하지 않습니다. DB 접속은 내부 Docker 네트워크의 `db:5432`를 사용하고, admin API는 호스트 `127.0.0.1:8002`, admin 화면은 `127.0.0.1:5175`에만 노출됩니다. 기존 `postgres_data` 볼륨은 유지되며 삭제하거나 초기화하지 않습니다.
 
-현재 PC의 DB에 로그 테이블이 아직 없다면, **한 번만** 아래 migration 작업을 실행합니다. 먼저 현재 DB를 백업하고, 기존 스키마 상태를 확인한 뒤 실행하세요. 이 명령은 SEOUL-WAVE 저장소의 기존 `003_operations_logging.sql`을 실행하며, 데이터베이스 테이블을 생성합니다. 이미 여섯 테이블이 있다면 다시 실행하지 마세요. 다른 컴퓨터의 DB에 있던 기존 로그 행들은 이 migration으로 복사되지 않습니다.
+기존 DB에 `003_operations_logging.sql`이 이미 적용되어 있다면, 아래 `007_run_component_logs.sql` 명령만 한 번 실행합니다. 007은 다섯 구성요소 상태를 추천 실행 ID에 연결하는 테이블을 추가하고, 기존 실행은 확인 가능한 로그만 반영해 채웁니다. 기존 API 호출이 없던 과거 실행은 `UNKNOWN`으로 표시합니다. 003이 아직 없는 새 DB에는 003을 먼저 적용한 뒤 007을 적용합니다. 이미 적용된 003은 다시 실행하지 마세요.
 
 ```powershell
-docker compose -f compose.yaml -f ..\SEOUL-WAVE_admin\docker-compose.admin.yml --profile db-migration run --rm db-migrate-operations
-docker compose -f compose.yaml -f ..\SEOUL-WAVE_admin\docker-compose.admin.yml up --build -d
+docker compose --env-file .env --env-file ..\SEOUL-WAVE_admin\.env -f compose.yaml -f ..\SEOUL-WAVE_admin\docker-compose.admin.yml --profile db-migration run --rm db-migrate-run-components
+docker compose --env-file .env --env-file ..\SEOUL-WAVE_admin\.env -f compose.yaml -f ..\SEOUL-WAVE_admin\docker-compose.admin.yml up --build -d
 ```
 
 상태 확인: http://localhost:8002/api/v1/admin/health · API 문서: http://localhost:8002/docs · 대시보드: http://localhost:5175
 
-기존 SEOUL-WAVE 최상위 `.env`에 `ADMIN_API_KEY` 한 줄만 추가하면 Compose가 같은 값을 API 인증 및 `VITE_DEMO_ADMIN_KEY`에 전달합니다. 다른 `.env` 파일은 추가로 필요하지 않습니다. 이 키는 로컬 개발용이며 브라우저에 포함되므로 외부에 공개하지 마세요. 현재 서비스는 localhost에만 바인딩됩니다. 팀원이 원격으로 접속해야 한다면 별도 서버 배포와 HTTPS/서버 인증을 추가해야 합니다.
+Compose는 SEOUL-WAVE 최상위 `.env`와 이 저장소의 `.env`를 차례로 읽습니다. DB와 공급자 키는 서비스 `.env`에서, 브라우저의 로컬 관리자 인증 키는 `VITE_DEMO_ADMIN_KEY`에서 읽습니다. OpenAI·서울시 API 키는 admin-api에만 전달하고 브라우저에는 전달하지 않습니다. `VITE_DEMO_ADMIN_KEY`는 브라우저에 포함되므로 로컬 개발에만 사용하세요. 서비스는 localhost에만 바인딩됩니다.
 
 ## 5. 관리자 GET API 명세
 
@@ -121,20 +121,28 @@ docker compose -f compose.yaml -f ..\SEOUL-WAVE_admin\docker-compose.admin.yml u
 | GET | `/api/v1/admin/agent-runs/{run_id}` | run, steps, handoffs | `agent_runs`, `agent_step_logs`, `handoff_logs` |
 | GET | `/api/v1/admin/api-calls` | items, stats | `api_call_logs` |
 | GET | `/api/v1/admin/incidents` | items 및 recoveries | `incident_logs`, `recovery_logs` |
-| GET | `/api/v1/admin/health` | PostgreSQL 연결 및 6개 로그 테이블 존재 여부 | 실제 PostgreSQL 검사 |
+| GET | `/api/v1/admin/health` | DB·스키마·설정된 외부 API 상태 | 실제 연결/응답 확인 |
 
 연결하지 못하거나 필요한 테이블이 없으면 관리자 API는 HTTP 503을 반환하고, health 응답에 DB 연결/스키마 상태를 표시합니다. Mock/SQLite 데이터로 대체하지 않습니다. 실행 구간과 동행 유형은 공통 운영 로그 스키마에 컬럼이 없어 `—`로 표시됩니다.
+
+### 외부 API 상태 확인 기준
+
+- **LLM:** `OPENAI_API_KEY`와 `OPENAI_MODEL`이 있으면 OpenAI `GET /v1/models/{model}`로 키 인증과 모델 메타데이터 조회를 확인합니다. 생성/추론은 호출하지 않으므로 추천 결과 생성 가능성을 보장하지 않습니다.
+- **서울시 문화행사 API:** `SEOUL_CULTURE_API_KEY`로 `aiViewCulture/1/1`을 호출합니다. `INFO-000`과 정상 빈 응답 `INFO-200`은 서비스 응답 정상으로 분류하며, 행사 없음과 API 장애를 구분합니다.
+- **상태값:** `UP` 정상 응답, `DEGRADED` HTTP 429 제한 응답, `DOWN` 인증·모델·네트워크·응답 오류, `NOT_CONFIGURED` 환경변수 미설정, `UNKNOWN` 점검 중 알 수 없는 오류입니다. 두 외부 요청의 제한시간은 각각 4초입니다.
+- **LangGraph:** admin API가 내부 네트워크에서 `itinerary-worker`의 `/health`를 조회합니다. 워커는 시작할 때 그래프 토폴로지를 컴파일하고 필요한 노드가 있는지 확인한 뒤에만 준비 응답을 냅니다. 그래프 노드는 실행하지 않으며, 사용자 추천·LLM 호출·로그 저장을 만들지 않습니다. 워커가 종료되거나 그래프 컴파일에 실패하면 `DOWN`입니다.
+- 응답 본문, API 키, 원문 오류 메시지를 저장하거나 반환하지 않습니다. 대시보드 새로고침으로 상태를 다시 확인합니다.
 
 요청 헤더:
 
 ```http
-X-Admin-Key: <SEOUL-WAVE/.env의 ADMIN_API_KEY>
+X-Admin-Key: <SEOUL-WAVE_admin/.env의 VITE_DEMO_ADMIN_KEY>
 ```
 
 API 확인 예시:
 
 ```powershell
-Invoke-RestMethod -Uri 'http://localhost:8002/api/v1/admin/dashboard/summary?days=7' -Headers @{ 'X-Admin-Key'='<ADMIN_API_KEY>' }
+Invoke-RestMethod -Uri 'http://localhost:8002/api/v1/admin/dashboard/summary?days=7' -Headers @{ 'X-Admin-Key'='<VITE_DEMO_ADMIN_KEY>' }
 ```
 
 **API 모니터링의 제공자 목록은 실제 `api_call_logs` 데이터에 따라 표시됩니다.** Kakao Maps 로그는 해당 호출이 실제로 구성된 경우에만 나타납니다.
@@ -157,9 +165,9 @@ flowchart TD
 
 ## 7. 운영 연결 확인사항
 
-- 사용자 서비스와 admin 컨테이너가 같은 PostgreSQL `seoul_wave` 및 같은 `003_operations_logging.sql` 테이블을 사용하는지 확인합니다.
+- 사용자 서비스와 admin 컨테이너가 같은 PostgreSQL `seoul_wave`와 운영 로그 테이블을 사용하는지 확인합니다.
 - admin API의 PostgreSQL 세션은 읽기 전용입니다. 로컬 Compose에서는 SEOUL-WAVE와 같은 DB 계정을 사용하며, 대시보드는 로그 테이블을 생성하거나 수정하지 않습니다. 외부/운영 배포에서는 별도의 `SELECT` 전용 DB 계정을 사용하세요.
-- `health`에서 PostgreSQL 연결과 필수 테이블 6개가 모두 `UP`인지 확인합니다. 없는 테이블은 사용자 서비스의 migration 적용 상태를 확인합니다.
+- `health`에서 PostgreSQL 연결과 필수 운영 로그 테이블을 확인합니다. 실행별 구성요소 이력을 보려면 사용자 서비스의 `007_run_component_logs.sql` migration도 적용해야 합니다.
 - 로컬 개발 구성에서 브라우저의 `VITE_DEMO_ADMIN_KEY`는 브라우저 번들에 포함됩니다. 인터넷에 공개하는 배포에는 사용하지 마세요.
 - 프롬프트, 응답 본문, API 키, 개인정보는 로그에 저장하지 않습니다.
 
@@ -185,7 +193,7 @@ flowchart TD
 ## 9. 현재 구현 범위 및 제한
 
 - PostgreSQL 운영 로그 조회 GET API 7개 및 화면 4개가 포함됩니다.
-- LangGraph나 외부 API 자체를 호출하지 않으며, DB에 저장된 로그만 보여줍니다.
+- 추천 생성이나 LangGraph를 호출하지 않습니다. 상태 확인에 필요한 외부 API의 짧은 읽기 요청만 보냅니다.
 - 공통 로그 스키마에는 `route`, `companion_type` 컬럼이 없어 실행 목록에 표시하지 않습니다.
 - 각 목록 응답은 UI에 맞춰 최대 500~1000행으로 제한됩니다. 전체 내보내기/서버 페이지네이션은 제공하지 않습니다.
 - 페이지 이동은 상태 기반으로 브라우저 URL을 변경하지 않습니다.

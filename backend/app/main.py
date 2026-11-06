@@ -1,5 +1,6 @@
 import hmac
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from typing import Annotated
 from uuid import UUID
@@ -10,6 +11,11 @@ from psycopg import Connection
 
 from . import repository
 from .database import check_log_schema, connect_database, get_database
+from .health_checks import (
+    check_langgraph_worker,
+    check_openai_model,
+    check_seoul_culture_api,
+)
 
 app = FastAPI(title="Seoul Wave Admin API", version="2.0.0")
 origins = [
@@ -75,6 +81,8 @@ def get_run(run_id: UUID, connection: Database) -> dict:
         "run": run,
         "steps": repository.list_agent_steps(connection, run_id),
         "handoffs": repository.list_handoffs(connection, run_id),
+        "components": repository.list_run_component_logs(connection, run_id),
+        "api_calls": repository.list_run_api_calls(connection, run_id),
         "mock": False,
     }
 
@@ -114,10 +122,22 @@ def get_health() -> dict:
             description = "Read-only connection to the service database"
             schema_status = "NOT_CONFIGURED" if missing else "UP"
             schema_description = (
-                f"Missing tables: {', '.join(missing)}" if missing else None
+                f"Missing schema objects: {', '.join(missing)}" if missing else None
             )
         finally:
             connection.close()
+
+    # Keep independent external probes concurrent so total wait is bounded by
+    # one probe timeout, rather than adding both timeouts together.
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        langgraph_future = executor.submit(check_langgraph_worker)
+        llm_future = executor.submit(check_openai_model)
+        culture_future = executor.submit(check_seoul_culture_api)
+        langgraph_status = langgraph_future.result()
+        llm_status = llm_future.result()
+        culture_status = culture_future.result()
+
+    checked_at = datetime.now(timezone.utc).isoformat()
 
     return {
         "mode": "POSTGRES",
@@ -131,18 +151,15 @@ def get_health() -> dict:
             },
             {
                 "name": "LangGraph",
-                "status": "NOT_CHECKED",
-                "description": "Execution logs are read from PostgreSQL",
+                **langgraph_status,
             },
             {
                 "name": "LLM API",
-                "status": "NOT_CHECKED",
-                "description": "Not probed by the read-only dashboard",
+                **llm_status,
             },
             {
                 "name": "Seoul Cultural Events",
-                "status": "NOT_CHECKED",
-                "description": "Not probed by the read-only dashboard",
+                **culture_status,
             },
         ],
     }

@@ -162,6 +162,34 @@ def list_handoffs(connection: Connection, run_id: UUID) -> list[dict]:
     ).fetchall()
 
 
+def list_run_component_logs(connection: Connection, run_id: UUID) -> list[dict]:
+    return connection.execute(
+        """SELECT run_id, component_name, status, started_at, checked_at,
+                  latency_ms, reason_code
+             FROM run_component_logs
+            WHERE run_id = %s
+            ORDER BY CASE component_name
+                WHEN 'POSTGRESQL' THEN 1
+                WHEN 'OPERATIONAL_LOG_SCHEMA' THEN 2
+                WHEN 'LANGGRAPH' THEN 3
+                WHEN 'LLM_API' THEN 4
+                WHEN 'SEOUL_CULTURAL_EVENTS' THEN 5
+                ELSE 6 END""",
+        (run_id,),
+    ).fetchall()
+
+
+def list_run_api_calls(connection: Connection, run_id: UUID) -> list[dict]:
+    return connection.execute(
+        """SELECT api_call_id, run_id, provider, api_type, http_status, success,
+                  latency_ms, called_at, error_source, error_code
+             FROM api_call_logs
+            WHERE run_id = %s
+            ORDER BY called_at, api_call_id""",
+        (run_id,),
+    ).fetchall()
+
+
 def list_api_calls(connection: Connection, limit: int) -> tuple[int, list[dict], list[dict]]:
     total = connection.execute(
         "SELECT count(*)::integer AS total FROM api_call_logs"
