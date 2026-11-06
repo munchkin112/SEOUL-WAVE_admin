@@ -1,13 +1,13 @@
 /** UUID-based API contract. Production must use authenticated session, not browser-stored admin key. */
-const BASE=import.meta.env.VITE_API_BASE_URL||'http://localhost:8000';
-const DEMO_KEY=import.meta.env.VITE_DEMO_ADMIN_KEY||'local-demo-key';
-export async function getJSON<T>(path:string):Promise<T>{const r=await fetch(`${BASE}${path}`,{headers:{'X-Admin-Key':DEMO_KEY}});if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);return r.json() as Promise<T>}
+const BASE=import.meta.env.VITE_API_BASE_URL||'http://localhost:8002';
+const ADMIN_KEY=import.meta.env.VITE_DEMO_ADMIN_KEY;
+export async function getJSON<T>(path:string):Promise<T>{if(!ADMIN_KEY)throw new Error('VITE_DEMO_ADMIN_KEY is not configured');const r=await fetch(`${BASE}${path}`,{headers:{'X-Admin-Key':ADMIN_KEY}});if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);return r.json() as Promise<T>}
 export type UUID=string;
 export type FailureSource='LANGGRAPH'|'LLM'|'EXTERNAL_API'|'DATABASE'|'UNKNOWN'|null;
 export type RunStatus='RUNNING'|'SUCCESS'|'FAILED';
 export type RecoveryStatus='RUNNING'|'RECOVERED'|'FAILED';
 export type IncidentStatus='OPEN'|'RECOVERING'|'RESOLVED';
-export type Run={run_id:UUID;status:RunStatus;duration_ms:number|null;started_at:string;finished_at:string|null;route:string;companion_type:string;error_source:FailureSource;error_code:string|null;failed_step_name:string|null};
+export type Run={run_id:UUID;status:RunStatus;duration_ms:number|null;started_at:string;finished_at:string|null;route:string|null;companion_type:string|null;error_source:FailureSource;error_code:string|null;failed_step_name:string|null};
 export type Summary={total:number;success:number;failed:number;recovered:number;success_rate:number;avg_duration_ms:number;failure_by_source:Record<string,number>;mock:boolean};
 export type Trend={date:string;success:number;failed:number;recovered:number};
 export type ApiCall={api_call_id:UUID;run_id:UUID;provider:string;api_type:'LLM'|'CULTURE'|'MAPS'|'OTHER';http_status:number|null;success:boolean;latency_ms:number;called_at:string;error_source:FailureSource;error_code:string|null};
