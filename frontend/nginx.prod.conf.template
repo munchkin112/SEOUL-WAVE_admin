@@ -1,0 +1,25 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    auth_basic "SEOUL WAVE admin";
+    auth_basic_user_file /run/secrets/admin_htpasswd;
+    add_header Cache-Control "no-store" always;
+    location = /healthz {
+        auth_basic off;
+        access_log off;
+        return 200 "ok";
+    }
+    location /admin/api/v1/admin/ {
+        proxy_pass http://admin-api:8000/api/v1/admin/;
+        proxy_set_header X-Admin-Key "${ADMIN_API_KEY}";
+        proxy_set_header Authorization "";
+        proxy_set_header Host $host;
+    }
+    location /admin/ {
+        rewrite ^/admin/(.*)$ /$1 last;
+    }
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
