@@ -41,12 +41,12 @@ function App(){
   }
   useEffect(()=>{void refresh();},[days]);
   useEffect(()=>{if(!selected)return;getJSON<RunDetail>(`/api/v1/admin/agent-runs/${encodeURIComponent(selected)}`).then(setDetail).catch(e=>setError(String(e)));},[selected]);
-  const runs=data?.runs.filter(r=>(runStatus==='ALL'||r.status===runStatus)&&(`${r.run_id} ${r.route}`.toLowerCase().includes(runSearch.toLowerCase())))||[];
+  const runs=data?.runs.filter(r=>(runStatus==='ALL'||r.status===runStatus)&&(`${r.run_id} ${r.route??''}`.toLowerCase().includes(runSearch.toLowerCase())))||[];
   const calls=data?.apiCalls.filter(c=>(provider==='ALL'||c.provider===provider)&&(apiStatus==='ALL'||(apiStatus==='SUCCESS')===c.success))||[];
   const incidents=data?.incidents.filter(i=>incidentStatus==='ALL'||i.status===incidentStatus)||[];
   const title=navigationItems.find(n=>n.id===page)?.label;
   return <div className="layout">
-    <aside className="sidebar"><h2><Waves size={27}/> 한강버스<br/>AI 나들이 플래너</h2><nav>{navigationItems.map(n=><button key={n.id} className={`nav ${page===n.id?'active':''}`} onClick={()=>setPage(n.id)}><n.icon size={18}/><span>{n.label}</span></button>)}</nav><p className="sidefoot">MOCK API · 개발용 데이터</p></aside>
+    <aside className="sidebar"><h2><Waves size={27}/> 한강버스<br/>AI 나들이 플래너</h2><nav>{navigationItems.map(n=><button key={n.id} className={`nav ${page===n.id?'active':''}`} onClick={()=>setPage(n.id)}><n.icon size={18}/><span>{n.label}</span></button>)}</nav><p className="sidefoot">PostgreSQL 운영 로그 조회</p></aside>
     <main><header><div><h1>{title}</h1><p>{page==='dashboard'?'AI 추천 서비스 운영 현황':page==='runs'?'LangGraph 실행 결과와 단계별 추적':page==='api'?'외부 API 호출 결과와 응답 성능':'장애 발생부터 자동 복구까지 확인'}</p></div><div className="actions">{page==='dashboard'&&<select aria-label="조회 기간" value={days} onChange={e=>setDays(Number(e.target.value))}><option value={7}>최근 7일</option><option value={30}>최근 30일</option></select>}<button onClick={()=>void refresh()} disabled={loading}><RefreshCw size={16}/>{loading?'불러오는 중':'새로고침'}</button></div></header>
     {error&&<div className="error" role="alert">API 요청 실패: {error} · 백엔드 실행 및 CORS 설정을 확인하세요.</div>}
     {!data?<div className="panel">{loading?'데이터를 불러오는 중입니다.':'조회된 데이터가 없습니다.'}</div>:<>
