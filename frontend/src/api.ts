@@ -1,7 +1,7 @@
 /** UUID-based API contract. Production must use authenticated session, not browser-stored admin key. */
-const BASE=import.meta.env.VITE_API_BASE_URL||'http://localhost:8002';
-const ADMIN_KEY=import.meta.env.VITE_DEMO_ADMIN_KEY;
-export async function getJSON<T>(path:string):Promise<T>{if(!ADMIN_KEY)throw new Error('VITE_DEMO_ADMIN_KEY is not configured');const r=await fetch(`${BASE}${path}`,{headers:{'X-Admin-Key':ADMIN_KEY}});if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);return r.json() as Promise<T>}
+const BASE=import.meta.env.VITE_API_BASE_URL||(import.meta.env.DEV?'http://localhost:8002':'/admin');
+const ADMIN_KEY=import.meta.env.DEV?import.meta.env.VITE_DEMO_ADMIN_KEY:undefined;
+export async function getJSON<T>(path:string):Promise<T>{const headers:HeadersInit=ADMIN_KEY?{'X-Admin-Key':ADMIN_KEY}:{};const r=await fetch(`${BASE}${path}`,{headers});if(!r.ok)throw new Error(`${r.status} ${r.statusText}`);return r.json() as Promise<T>}
 export type UUID=string;
 export type FailureSource='LANGGRAPH'|'LLM'|'EXTERNAL_API'|'DATABASE'|'UNKNOWN'|null;
 export type RunStatus='RUNNING'|'SUCCESS'|'FAILED';
