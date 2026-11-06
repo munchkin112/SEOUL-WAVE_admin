@@ -6,7 +6,7 @@ services:
     ports:
       - "127.0.0.1:8002:8000"
     environment:
-      ADMIN_API_KEY: ${ADMIN_API_KEY:?Add ADMIN_API_KEY to the SEOUL-WAVE root .env}
+      ADMIN_API_KEY: ${ADMIN_API_KEY:-${VITE_DEMO_ADMIN_KEY:?Set VITE_DEMO_ADMIN_KEY in the admin .env}}
       CORS_ORIGINS: http://localhost:5175
       DATABASE_HOST: db
       DATABASE_PORT: "5432"
@@ -14,8 +14,14 @@ services:
       DATABASE_USER: ${POSTGRES_USER:-seoul_wave_app}
       DATABASE_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the SEOUL-WAVE root .env}
       DATABASE_SSLMODE: disable
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-}
+      SEOUL_CULTURE_API_KEY: ${SEOUL_CULTURE_API_KEY:-}
+      LANGGRAPH_HEALTH_URL: http://itinerary-worker:8090/health
     depends_on:
       db:
+        condition: service_healthy
+      itinerary-worker:
         condition: service_healthy
 
   admin-frontend:
@@ -26,7 +32,7 @@ services:
       - "127.0.0.1:5175:5173"
     environment:
       VITE_API_BASE_URL: http://localhost:8002
-      VITE_DEMO_ADMIN_KEY: ${ADMIN_API_KEY:?Add ADMIN_API_KEY to the SEOUL-WAVE root .env}
+      VITE_DEMO_ADMIN_KEY: ${VITE_DEMO_ADMIN_KEY:-${ADMIN_API_KEY:?Set VITE_DEMO_ADMIN_KEY in the admin .env}}
     depends_on:
       - admin-api
 
@@ -42,6 +48,46 @@ services:
       PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the SEOUL-WAVE root .env}
     volumes:
       - ./backend/migrations/003_operations_logging.sql:/migration.sql:ro
+    command:
+      - psql
+      - --set=ON_ERROR_STOP=1
+      - --file=/migration.sql
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db-migrate-run-components:
+    image: postgres:18
+    profiles:
+      - db-migration
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-seoul_wave}
+      PGUSER: ${POSTGRES_USER:-seoul_wave_app}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the SEOUL-WAVE root .env}
+    volumes:
+      - ./backend/migrations/007_run_component_logs.sql:/migration.sql:ro
+    command:
+      - psql
+      - --set=ON_ERROR_STOP=1
+      - --file=/migration.sql
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db-migrate-auto-recovery:
+    image: postgres:18
+    profiles:
+      - db-migration
+    environment:
+      PGHOST: db
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-seoul_wave}
+      PGUSER: ${POSTGRES_USER:-seoul_wave_app}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in the SEOUL-WAVE root .env}
+    volumes:
+      - ./backend/migrations/008_auto_recovery.sql:/migration.sql:ro
     command:
       - psql
       - --set=ON_ERROR_STOP=1

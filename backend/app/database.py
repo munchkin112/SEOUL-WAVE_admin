@@ -16,6 +16,15 @@ REQUIRED_TABLES = (
     "handoff_logs",
     "incident_logs",
     "recovery_logs",
+    "run_component_logs",
+)
+REQUIRED_COLUMNS = (
+    ("incident_logs", "monitor_event_id"),
+    ("itinerary_executions", "next_retry_at"),
+)
+REQUIRED_NULLABLE_COLUMNS = (
+    ("incident_logs", "run_id"),
+    ("recovery_logs", "run_id"),
 )
 
 
@@ -68,7 +77,41 @@ def check_log_schema(connection: Connection) -> list[str]:
         (list(REQUIRED_TABLES),),
     ).fetchall()
     existing = {row["table_name"] for row in rows}
-    return [table for table in REQUIRED_TABLES if table not in existing]
+    missing = [table for table in REQUIRED_TABLES if table not in existing]
+    if missing:
+        return missing
+    column_rows = connection.execute(
+        """
+        SELECT table_name, column_name, is_nullable
+          FROM information_schema.columns
+         WHERE table_schema = 'public'
+           AND (table_name, column_name) IN (
+               ('incident_logs', 'monitor_event_id'),
+               ('itinerary_executions', 'next_retry_at'),
+               ('incident_logs', 'run_id'),
+               ('recovery_logs', 'run_id')
+           )
+        """
+    ).fetchall()
+    existing_columns = {
+        (row["table_name"], row["column_name"]) for row in column_rows
+    }
+    missing.extend(
+        f"{table}.{column}"
+        for table, column in REQUIRED_COLUMNS
+        if (table, column) not in existing_columns
+    )
+    nullable_columns = {
+        (row["table_name"], row["column_name"])
+        for row in column_rows
+        if row["is_nullable"] == "YES"
+    }
+    missing.extend(
+        f"{table}.{column} must allow NULL"
+        for table, column in REQUIRED_NULLABLE_COLUMNS
+        if (table, column) not in nullable_columns
+    )
+    return missing
 
 
 def get_database() -> Iterator[Connection]:
@@ -78,7 +121,7 @@ def get_database() -> Iterator[Connection]:
         if missing:
             raise HTTPException(
                 status_code=503,
-                detail=f"Operational log schema is missing tables: {', '.join(missing)}",
+                detail=f"Operational log schema is missing objects: {', '.join(missing)}",
             )
         yield connection
     finally:
